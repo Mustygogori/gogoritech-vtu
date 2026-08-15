@@ -149,8 +149,9 @@ export default function Page() {
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string | null>(null);
   const [selectedAmount, setSelectedAmount] = useState<number | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<string | null>(null);
-  const [purchaseStatus, setPurchaseStatus] = useState<"form" | "processing" | "success">("form");
+  const [purchaseStatus, setPurchaseStatus] = useState<"form" | "processing" | "success" | "error">("form");
   const [transactionRef, setTransactionRef] = useState("");
+  const [purchaseError, setPurchaseError] = useState("");
 
   const handleBuyAirtime = () => {
     setShowAirtimeModal(true);
@@ -193,25 +194,51 @@ export default function Page() {
     setPurchaseStatus("form");
   };
 
-  const handleConfirmPurchase = () => {
+  const handleConfirmPurchase = async () => {
     if (!selectedNetwork || !phoneNumber || (!selectedAmount && !selectedPlan)) {
-      alert("Please fill in all fields");
+      setPurchaseError("Please complete the network, phone number, and amount fields.");
+      setPurchaseStatus("error");
       return;
     }
 
-    // Mock phone validation
     if (phoneNumber.replace(/\D/g, "").length < 10) {
-      alert("Please enter a valid phone number");
+      setPurchaseError("Please enter a valid phone number before continuing.");
+      setPurchaseStatus("error");
       return;
     }
 
+    setPurchaseError("");
     setPurchaseStatus("processing");
-    // Simulate processing delay
-    setTimeout(() => {
-      const ref = `TXN-${Date.now()}`;
+
+    try {
+      const response = await fetch("/api/sogo/airtime", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          network: selectedNetwork,
+          phone: phoneNumber,
+          amount: selectedAmount ?? Number(selectedPlan ?? 0),
+          currency: "NGN",
+          reference: `GVT-AIRTIME-${Date.now()}`,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data?.message || "The airtime request could not be completed.");
+      }
+
+      const ref = data?.request?.idempotencyKey || `GVT-AIRTIME-${Date.now()}`;
       setTransactionRef(ref);
       setPurchaseStatus("success");
-    }, 2000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "An unexpected error occurred.";
+      setPurchaseError(message);
+      setPurchaseStatus("error");
+    }
   };
 
   const selectedAmountData = selectedAmount !== null ? airtimeAmounts.find((a) => a.amount === selectedAmount) ?? null : null;
@@ -1037,7 +1064,11 @@ export default function Page() {
                       </button>
 
                       <button
-                        onClick={() => setShowAirtimeModal(false)}
+                        onClick={() => {
+                          setShowAirtimeModal(false);
+                          setPurchaseStatus("form");
+                          setPurchaseError("");
+                        }}
                         className="mt-2 w-full rounded-lg border border-slate-700 py-2.5 font-medium text-slate-300 transition hover:border-slate-600"
                       >
                         Cancel
@@ -1061,7 +1092,7 @@ export default function Page() {
                     <span className="text-4xl">✓</span>
                   </div>
                   <h2 className="text-2xl font-semibold text-white mb-2">Purchase Successful!</h2>
-                  <p className="text-slate-400 mb-6">Your airtime has been delivered successfully</p>
+                  <p className="text-slate-400 mb-6">Your airtime purchase request was accepted in the Sogo sandbox environment.</p>
 
                   <div className="rounded-2xl border border-slate-700 bg-slate-950/60 p-5 mb-6 space-y-3 text-left">
                     <div className="flex justify-between">
@@ -1089,10 +1120,34 @@ export default function Page() {
                   </div>
 
                   <button
-                    onClick={() => setShowAirtimeModal(false)}
+                    onClick={() => {
+                      setShowAirtimeModal(false);
+                      setPurchaseStatus("form");
+                      setPurchaseError("");
+                    }}
                     className="w-full rounded-lg bg-emerald-500 py-2.5 font-semibold text-white transition hover:bg-emerald-600"
                   >
                     Close
+                  </button>
+                </div>
+              )}
+
+              {purchaseStatus === "error" && (
+                <div className="p-8 text-center">
+                  <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-red-500/20">
+                    <span className="text-4xl">!</span>
+                  </div>
+                  <h2 className="text-2xl font-semibold text-white mb-2">Purchase Failed</h2>
+                  <p className="text-red-300 mb-6">{purchaseError || "The airtime purchase could not be completed."}</p>
+
+                  <button
+                    onClick={() => {
+                      setPurchaseError("");
+                      setPurchaseStatus("form");
+                    }}
+                    className="w-full rounded-lg bg-red-500 py-2.5 font-semibold text-white transition hover:bg-red-600"
+                  >
+                    Try Again
                   </button>
                 </div>
               )}
